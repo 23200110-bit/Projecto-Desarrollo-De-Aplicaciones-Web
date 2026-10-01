@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using EventosPeruIA.Api.Models;
 
 namespace EventosPeruIA.Api.Data
