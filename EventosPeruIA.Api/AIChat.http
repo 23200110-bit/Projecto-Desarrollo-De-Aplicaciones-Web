@@ -1,0 +1,49 @@
+@EventosPeruIA.Api_HostAddress = http://localhost:5091
+
+### Tecnología
+POST {{EventosPeruIA.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "Recomiéndame eventos de tecnología"
+}
+
+### Ubicación
+POST {{EventosPeruIA.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "¿Qué eventos hay en Miraflores?"
+}
+
+### Precio
+POST {{EventosPeruIA.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "Quiero un evento por menos de S/50"
+}
+
+### Combinada
+POST {{EventosPeruIA.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "Quiero un evento de tecnología en Miraflores por menos de S/100"
+}
+
+### Sin resultados
+POST {{EventosPeruIA.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "¿Hay eventos de astronomía en Callao por menos de S/20?"
+}
+
+### Consulta genérica
+POST {{EventosPeruIA.Api_HostAddress}}/api/ai/chat
+Content-Type: application/json
+
+{
+  "message": "Hola"
+}

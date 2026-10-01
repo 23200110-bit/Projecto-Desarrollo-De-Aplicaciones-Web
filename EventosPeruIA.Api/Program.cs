@@ -1,9 +1,13 @@
 using EventosPeruIA.Api.Data;
 using EventosPeruIA.Api.Services;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
+using OllamaSharp;
 using System.Text;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,6 +20,24 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 );
 
 builder.Services.AddScoped<JwtService>();
+
+builder.Services.AddSingleton<IChatClient>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+
+    var endpoint = configuration["AI:Endpoint"]
+        ?? "http://localhost:11434";
+
+    var model = configuration["AI:Model"]
+        ?? "llama3.2";
+
+    return new OllamaApiClient(
+        new Uri(endpoint),
+        model
+    );
+});
+
+builder.Services.AddScoped<IAIService, AIService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -39,7 +61,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("bearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = "Ingrese el token JWT."
+    });
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("bearer", document)] = []
+    });
+});
 
 var app = builder.Build();
 
