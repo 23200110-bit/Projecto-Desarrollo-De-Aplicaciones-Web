@@ -9,10 +9,14 @@ namespace EventosPeruIA.Api.Controllers
     public class AIController : ControllerBase
     {
         private readonly IAIService _aiService;
+        private readonly IRagIndexService _ragIndexService;
 
-        public AIController(IAIService aiService)
+        public AIController(
+            IAIService aiService,
+            IRagIndexService ragIndexService)
         {
             _aiService = aiService;
+            _ragIndexService = ragIndexService;
         }
 
         [HttpPost("chat")]
@@ -26,6 +30,20 @@ namespace EventosPeruIA.Api.Controllers
             var response = await _aiService.ChatAsync(request.Message);
 
             return Ok(response);
+        }
+
+
+        [HttpPost("reindex")]
+        public async Task<IActionResult> Reindex()
+        {
+            var cantidad =
+                await _ragIndexService.ReindexEventsAsync();
+
+            return Ok(new
+            {
+                mensaje = "Reindexación completada",
+                eventosIndexados = cantidad
+            });
         }
     }
 }

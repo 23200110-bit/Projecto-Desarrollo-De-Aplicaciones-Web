@@ -1,27 +1,31 @@
-using Microsoft.Extensions.AI;
 using EventosPeruIA.Api.Data;
+using EventosPeruIA.Api.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
-using EventosPeruIA.Api.DTOs;
 
 namespace EventosPeruIA.Api.Services
 {
     public class AIService : IAIService
     {
-
         private readonly IChatClient _chatClient;
         private readonly ApplicationDbContext _context;
+        private readonly IEmbeddingService _embeddingService;
+        private readonly IQdrantService _qdrantService;
 
         public AIService(
             IChatClient chatClient,
-            ApplicationDbContext context)
+            ApplicationDbContext context,
+            IEmbeddingService embeddingService,
+            IQdrantService qdrantService)
         {
             _chatClient = chatClient;
             _context = context;
+            _embeddingService = embeddingService;
+            _qdrantService = qdrantService;
         }
-
 
         public async Task<AIChatResponse> ChatAsync(string message)
         {
@@ -33,14 +37,46 @@ namespace EventosPeruIA.Api.Services
                 };
             }
 
+            // 1. Generar embedding de la pregunta
+            var queryEmbedding =
+                await _embeddingService.GenerateEmbeddingAsync(message);
+
+            // 2. Buscar en Qdrant los eventos semánticamente más cercanos
+            var eventIds =
+                await _qdrantService.SearchEventIdsAsync(
+                    queryEmbedding,
+                    10
+                );
+
+            if (eventIds.Count == 0)
+            {
+                return new AIChatResponse
+                {
+                    Answer = "No encontré eventos relacionados con tu consulta."
+                };
+            }
+
+            // 3. Recuperar desde SQL Server los datos actuales
             var eventos = await _context.Eventos
                 .Include(e => e.Categoria)
+                .Where(e => eventIds.Contains(e.Id))
                 .Where(e => e.Estado == "Publicado")
                 .Where(e => e.FechaInicio > DateTime.UtcNow)
-                .OrderBy(e => e.FechaInicio)
-                .Take(20)
                 .ToListAsync();
 
+            // Mantener el orden de relevancia entregado por Qdrant
+            var ordenQdrant = eventIds
+                .Select((id, index) => new { id, index })
+                .ToDictionary(x => x.id, x => x.index);
+
+            eventos = eventos
+                .OrderBy(e =>
+                    ordenQdrant.TryGetValue(e.Id, out var index)
+                        ? index
+                        : int.MaxValue)
+                .ToList();
+
+            // 4. Aplicar filtros exactos cuando el usuario los indique
             var normalized = Normalize(message);
 
             var category = DetectCategory(normalized);
@@ -76,13 +112,19 @@ namespace EventosPeruIA.Api.Services
             {
                 return new AIChatResponse
                 {
-                    Answer = "Actualmente no hay eventos publicados disponibles."
+                    Answer = "No encontré eventos disponibles que coincidan con tu consulta."
                 };
             }
 
+            // Evitar enviar demasiado contexto al LLM
+            var eventosRelevantes = eventos
+                .Take(5)
+                .ToList();
+
+            // 5. Construir contexto RAG con información actual de SQL Server
             var contexto = string.Join(
                 "\n",
-                eventos.Select(e =>
+                eventosRelevantes.Select(e =>
                     $"- ID: {e.Id}" +
                     $" | Nombre: {e.Nombre}" +
                     $" | Descripción: {e.Descripcion}" +
@@ -94,35 +136,43 @@ namespace EventosPeruIA.Api.Services
                     $" | Estado: {e.Estado}")
             );
 
+            // 6. Enviar únicamente el contexto recuperado al LLM
             var prompt = $"""
 Eres el asistente oficial de EventosPeruIA.
 
 Responde siempre en español de forma clara y breve.
 
-Debes responder únicamente utilizando los eventos proporcionados en el contexto.
+Tu respuesta debe basarse únicamente en la información proporcionada
+en la sección "Eventos recuperados".
 
 Reglas:
 - No inventes eventos.
+- No inventes nombres.
 - No inventes precios.
 - No inventes fechas.
 - No inventes ubicaciones.
-- Solo recomienda eventos publicados.
-- Si ningún evento coincide con lo solicitado, indica que no encontraste resultados.
-- Si el usuario pide comparar eventos, realiza la comparación únicamente con los datos proporcionados.
-- El aforo representa la capacidad total del evento, no necesariamente las entradas disponibles.
+- No inventes disponibilidad.
+- Solo recomienda eventos incluidos en el contexto.
+- Si la información solicitada no está disponible, indícalo claramente.
+- Si el usuario solicita una comparación, compara únicamente los eventos recuperados.
+- El aforo representa la capacidad total del evento y no necesariamente las entradas disponibles.
+- No menciones eventos que no estén incluidos en "Eventos recuperados".
+- No expliques el funcionamiento interno del sistema, los embeddings ni Qdrant.
 
 Pregunta del usuario:
 {message}
 
-Eventos disponibles:
+Eventos recuperados:
 {contexto}
 
 Responde la consulta del usuario.
 """;
 
-            var aiResponse = await _chatClient.GetResponseAsync(prompt);
+            var aiResponse =
+                await _chatClient.GetResponseAsync(prompt);
 
-            var recommendations = eventos
+            // 7. Devolver también los eventos estructurados para el frontend
+            var recommendations = eventosRelevantes
                 .Select(e => new AIEventRecommendation
                 {
                     Id = e.Id,
@@ -147,6 +197,8 @@ Responde la consulta del usuario.
             if (text.Contains("tecnologia") ||
                 text.Contains("programacion") ||
                 text.Contains("desarrollo web") ||
+                text.Contains("inteligencia artificial") ||
+                text.Contains("software") ||
                 text.Contains(" ia ") ||
                 text.StartsWith("ia ") ||
                 text.EndsWith(" ia"))
@@ -169,7 +221,8 @@ Responde la consulta del usuario.
                 return "gastronomia";
             }
 
-            if (text.Contains("arte") || text.Contains("exposicion"))
+            if (text.Contains("arte") ||
+                text.Contains("exposicion"))
             {
                 return "arte";
             }
@@ -185,17 +238,22 @@ Responde la consulta del usuario.
                 "san isidro",
                 "barranco",
                 "surco",
+                "santiago de surco",
                 "san borja",
                 "la molina",
                 "jesus maria",
                 "lince",
                 "magdalena",
+                "magdalena del mar",
                 "pueblo libre",
                 "centro de lima",
+                "lima",
                 "callao"
             ];
 
-            return locations.FirstOrDefault(text.Contains);
+            return locations
+                .OrderByDescending(x => x.Length)
+                .FirstOrDefault(text.Contains);
         }
 
         private static decimal? DetectMaxPrice(string text)
@@ -204,19 +262,22 @@ Responde la consulta del usuario.
             {
                 @"menos\s+de\s+(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)",
                 @"menor\s+de\s+(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)",
-                @"maximo\s+(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)",
-                @"hasta\s+(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)"
+                @"maximo\s+(?:de\s+)?(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)",
+                @"hasta\s+(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)",
+                @"no\s+mas\s+de\s+(?:s\/\.?\s*)?(\d+(?:[.,]\d+)?)"
             };
 
             foreach (var pattern in patterns)
             {
                 var match = Regex.Match(text, pattern);
+
                 if (!match.Success)
                 {
                     continue;
                 }
 
-                var value = match.Groups[1].Value.Replace(',', '.');
+                var value =
+                    match.Groups[1].Value.Replace(',', '.');
 
                 if (decimal.TryParse(
                     value,
@@ -241,7 +302,8 @@ Responde la consulta del usuario.
 
             foreach (var character in normalized)
             {
-                if (CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+                if (CharUnicodeInfo.GetUnicodeCategory(character) !=
+                    UnicodeCategory.NonSpacingMark)
                 {
                     builder.Append(character);
                 }
@@ -251,7 +313,5 @@ Responde la consulta del usuario.
                 .ToString()
                 .Normalize(NormalizationForm.FormC);
         }
-
-        
     }
 }

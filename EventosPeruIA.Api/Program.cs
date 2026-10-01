@@ -6,6 +6,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using OllamaSharp;
+using Qdrant.Client;
 using System.Text;
 
 
@@ -18,6 +19,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         builder.Configuration.GetConnectionString("DefaultConnection")
     )
 );
+
+
 
 builder.Services.AddScoped<JwtService>();
 
@@ -37,7 +40,38 @@ builder.Services.AddSingleton<IChatClient>(sp =>
     );
 });
 
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+
+    var endpoint = configuration["AI:Endpoint"]
+        ?? "http://localhost:11434";
+
+    var model = configuration["AI:EmbeddingModel"]
+        ?? "nomic-embed-text";
+
+    return new OllamaApiClient(
+        new Uri(endpoint),
+        model
+    );
+});
+
+
+
+builder.Services.AddSingleton<QdrantClient>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+
+    var host = configuration["Qdrant:Host"] ?? "localhost";
+    var port = int.Parse(configuration["Qdrant:Port"] ?? "6334");
+
+    return new QdrantClient(host, port);
+});
+
 builder.Services.AddScoped<IAIService, AIService>();
+builder.Services.AddScoped<IEmbeddingService, EmbeddingService>();
+builder.Services.AddScoped<IQdrantService, QdrantService>();
+builder.Services.AddScoped<IRagIndexService, RagIndexService>();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
