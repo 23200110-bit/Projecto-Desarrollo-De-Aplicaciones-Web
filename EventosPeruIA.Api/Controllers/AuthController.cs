@@ -78,5 +78,65 @@ namespace EventosPeruIA.Api.Controllers
                 }
             });
         }
+
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword(
+            ForgotPasswordRequest request)
+        {
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u => u.Email == request.Email);
+
+            if (usuario == null)
+            {
+                return Ok(new
+                {
+                    mensaje = "Si el correo está registrado se generará una solicitud de recuperación"
+                });
+            }
+
+            var token = Guid.NewGuid().ToString();
+
+            usuario.ResetToken = token;
+            usuario.ResetTokenExpira = DateTime.UtcNow.AddMinutes(30);
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                mensaje = "Token de recuperación generado",
+                token
+            });
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword(
+            ResetPasswordRequest request)
+        {
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u =>
+                    u.ResetToken == request.Token &&
+                    u.ResetTokenExpira > DateTime.UtcNow);
+
+            if (usuario == null)
+            {
+                return BadRequest(new
+                {
+                    mensaje = "El token es inválido o ha expirado"
+                });
+            }
+
+            usuario.PasswordHash =
+                BCrypt.Net.BCrypt.HashPassword(request.NuevaPassword);
+
+            usuario.ResetToken = null;
+            usuario.ResetTokenExpira = null;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                mensaje = "Contraseña actualizada correctamente"
+            });
+        }
     }
 }

@@ -11,5 +11,7 @@
         public string PasswordHash { get; set; } = string.Empty;
 
         public string Rol { get; set; } = "Usuario";
+        public string? ResetToken { get; set; }
+        public DateTime? ResetTokenExpira { get; set; }
     }
 }
