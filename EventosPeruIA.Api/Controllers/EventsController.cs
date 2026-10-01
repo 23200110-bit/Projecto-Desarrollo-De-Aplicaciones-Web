@@ -29,20 +29,75 @@ namespace EventosPeruIA.Api.Controllers
         private int UsuarioActualId =>
             int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-        
-        [HttpGet]
+		// GET: /api/events?categoriaId=1&ubicacion=Lima&fecha=2026-10-15 FILTROS
+		[HttpGet]
         [AllowAnonymous]
-        public async Task<IActionResult> Listar()
+        public async Task<IActionResult> Listar(
+		    [FromQuery] int? categoriaId,
+			[FromQuery] string? ubicacion,
+			[FromQuery] DateTime? fecha)
         {
-            var eventos = await _context.Eventos
-                .Where(e => e.Estado == "Publicado")
-                .ToListAsync();
+			var query = _context.Eventos
+				.Include(e => e.Categoria)
+				.Where(e => e.Estado == "Publicado")
+				.AsQueryable();
+			if (categoriaId.HasValue)
+			{
+				query = query.Where(e => e.CategoriaId == categoriaId.Value);
+			}
 
-            return Ok(eventos);
-        }
+			if (!string.IsNullOrWhiteSpace(ubicacion))
+			{
+				query = query.Where(e => e.Ubicacion.Contains(ubicacion));
+			}
 
-        
-        [HttpPost]
+			if (fecha.HasValue)
+			{
+				var fechaFiltro = fecha.Value.Date;
+				query = query.Where(e => e.FechaInicio.Date == fechaFiltro);
+			}
+			var eventos = await query.ToListAsync();
+			return Ok(eventos);
+		}
+		// GET: /api/events/5 AFORO
+        [HttpGet("{id}")]
+		[AllowAnonymous]
+		public async Task<IActionResult> ObtenerDetalle(int id)
+        {
+			var evento = await _context.Eventos
+				.Include(e => e.Categoria)
+				.FirstOrDefaultAsync(e => e.Id == id);
+
+			if (evento == null)
+			{
+				return NotFound(new { message = $"No existe el evento con ID {id} ." });
+			}
+
+			// US-006: Cálculo de disponibilidad (Aforo y las Entradas vendidas)
+			int ticketsVendidos = 0; // Se vinculará con Cristofer cuando agregue la tabla Tickets
+			int cuposDisponibles = Math.Max(0, evento.Aforo - ticketsVendidos);
+
+
+			var detalle = new
+			{
+				evento.Id,
+				evento.Nombre,
+				evento.Descripcion,
+				evento.FechaInicio,
+				evento.Ubicacion,
+				evento.Precio,
+				evento.Estado,
+				evento.Aforo,
+				TicketsVendidos = ticketsVendidos,
+				CuposDisponibles = cuposDisponibles,
+				Categoria = evento.Categoria != null ? evento.Categoria.Nombre : null
+			};
+
+			return Ok(detalle);
+		}
+
+
+		[HttpPost]
         public async Task<IActionResult> Crear(CreateEventoRequest request)
         {
             if (request.Aforo <= 0)
