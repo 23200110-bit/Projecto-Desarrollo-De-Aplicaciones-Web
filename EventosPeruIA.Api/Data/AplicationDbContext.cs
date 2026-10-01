@@ -11,5 +11,7 @@ namespace EventosPeruIA.Api.Data
         }
 
         public DbSet<Usuario> Usuarios => Set<Usuario>();
+        public DbSet<Categoria> Categorias => Set<Categoria>();
+        public DbSet<Evento> Eventos => Set<Evento>();
     }
 }
