@@ -3,6 +3,7 @@
 	public class ValidateQrRequest
 	{
 		public int EventoId { get; set; }
-		public string QrCode { get; set; } = string.Empty;
+		// Identificador del ticket según la implementación de Cristofer (Guid)
+		public Guid TicketId { get; set; }
 	}
 }

@@ -60,8 +60,34 @@ namespace EventosPeruIA.Api.Controllers
 
             _db.Tickets.Add(ticket);
 
-            await _db.SaveChangesAsync();
+            // Añadido try/catch para capturar información diagnóstica sin alterar la lógica previa
+            try
+            {
+                // Información útil para depuración en tiempo de ejecución
+                var conn = _db.Database.GetDbConnection();
+                var ticketEntity = _db.Model.FindEntityType(typeof(EventosPeruIA.Api.Models.Ticket));
+                var tableName = ticketEntity?.GetTableName();
+                var schema = ticketEntity?.GetSchema() ?? "dbo";
 
+                System.Diagnostics.Debug.WriteLine($"[TicketsController] Guardando ticket. Database='{conn?.Database}', DataSource='{conn?.DataSource}', Tabla='{schema}.{tableName}'");
+
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // Registrar contexto para ayudar a identificar causas como 'Invalid object name'
+                var conn = _db.Database.GetDbConnection();
+                var ticketEntity = _db.Model.FindEntityType(typeof(EventosPeruIA.Api.Models.Ticket));
+                var tableName = ticketEntity?.GetTableName();
+                var schema = ticketEntity?.GetSchema() ?? "dbo";
+
+                System.Diagnostics.Debug.WriteLine($"[TicketsController] Error guardando ticket. Conn='{conn?.ConnectionString}', Database='{conn?.Database}', Tabla='{schema}.{tableName}', Ex='{ex}'");
+
+                // Re-lanzar para mantener el comportamiento actual (y que se vea la excepción en VS)
+                throw;
+            }
+            // Bloque con _logger eliminado para evitar duplicación.
+            // Se mantiene el bloque diagnóstico previo que usa System.Diagnostics.Debug.WriteLine.
             await transaction.CommitAsync();
 
             var response = new PurchaseTicketResponse

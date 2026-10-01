@@ -73,9 +73,10 @@ namespace EventosPeruIA.Api.Controllers
 				return NotFound(new { message = $"No existe el evento con ID {id} ." });
 			}
 
-			// US-006: Cálculo de disponibilidad (Aforo y las Entradas vendidas)
-			int ticketsVendidos = 0; // Se vinculará con Cristofer cuando agregue la tabla Tickets
-			int cuposDisponibles = Math.Max(0, evento.Aforo - ticketsVendidos);
+            // US-006: Cálculo de disponibilidad (Aforo y las Entradas vendidas)
+            int ticketsVendidos = await _context.Tickets
+                .CountAsync(t => t.EventoId == id && t.Estado != EstadoTicket.Anulada);
+            int cuposDisponibles = Math.Max(0, evento.Aforo - ticketsVendidos);
 
 
 			var detalle = new
