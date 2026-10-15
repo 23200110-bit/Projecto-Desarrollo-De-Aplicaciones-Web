@@ -37,13 +37,16 @@ namespace EventosPeruIA.Api.Controllers
                 return NotFound(new { message = "Evento no encontrado." });
             }
 
-            if (evento.Aforo < request.Cantidad)
+            var available = await EventosPeruIA.Api.Services.EventAvailability.GetAsync(_db, [evento]);
+            if (evento.Estado != "Publicado" || evento.FechaInicio <= DateTime.UtcNow)
+                return BadRequest(new { message = "El evento no está disponible para compra." });
+            if (available[evento.Id] < request.Cantidad)
             {
                 await transaction.RollbackAsync();
                 return BadRequest(new { message = "No hay suficientes cupos disponibles." });
             }
 
-            evento.Aforo -= request.Cantidad;
+            // Aforo conserva la capacidad total; los tickets determinan la ocupación.
 
             var ticket = new Ticket
             {

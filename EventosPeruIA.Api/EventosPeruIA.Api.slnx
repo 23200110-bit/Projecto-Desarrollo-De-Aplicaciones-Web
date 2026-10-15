@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="EventosPeruIA.Api.csproj" />
+  <Project Path="../EventosPeruIA.Tests/EventosPeruIA.Tests.csproj" />
 </Solution>

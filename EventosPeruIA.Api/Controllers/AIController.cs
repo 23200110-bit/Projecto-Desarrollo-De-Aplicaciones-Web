@@ -1,6 +1,7 @@
 using EventosPeruIA.Api.DTOs;
 using EventosPeruIA.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace EventosPeruIA.Api.Controllers
 {
@@ -27,17 +28,29 @@ namespace EventosPeruIA.Api.Controllers
                 return ValidationProblem(ModelState);
             }
 
-            var response = await _aiService.ChatAsync(request.Message);
-
-            return Ok(response);
+            if (string.IsNullOrWhiteSpace(request.Message))
+                return BadRequest(new { message = "Escribe una consulta sobre eventos." });
+            try
+            {
+                return Ok(await _aiService.ChatAsync(request.Message));
+            }
+            catch (Exception ex) when (ex is HttpRequestException or Grpc.Core.RpcException or TimeoutException or TaskCanceledException)
+            {
+                return StatusCode(503, new { message = "El asistente no está disponible temporalmente. Inténtalo más tarde." });
+            }
         }
 
 
         [HttpPost("reindex")]
+        [Authorize(Policy = "AIReindex")]
         public async Task<IActionResult> Reindex()
         {
-            var cantidad =
-                await _ragIndexService.ReindexEventsAsync();
+            int cantidad;
+            try { cantidad = await _ragIndexService.ReindexEventsAsync(); }
+            catch (Exception ex) when (ex is HttpRequestException or Grpc.Core.RpcException or TimeoutException or TaskCanceledException)
+            {
+                return StatusCode(503, new { message = "No se pudo completar la reindexación. Inténtalo más tarde." });
+            }
 
             return Ok(new
             {
