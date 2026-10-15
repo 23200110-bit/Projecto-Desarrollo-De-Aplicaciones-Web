@@ -92,7 +92,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options => options.AddPolicy("AIReindex", policy =>
+    policy.RequireAuthenticatedUser().RequireAssertion(context =>
+    {
+        var id = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var operators = builder.Configuration.GetSection("AI:ReindexOperatorIds").Get<string[]>() ?? [];
+        return id != null && operators.Contains(id, StringComparer.Ordinal);
+    })));
+builder.Services.AddHostedService<RagIndexWorker>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -127,3 +134,4 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+public partial class Program { }

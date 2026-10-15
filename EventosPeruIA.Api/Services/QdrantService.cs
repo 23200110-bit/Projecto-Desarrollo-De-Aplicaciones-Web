@@ -1,4 +1,4 @@
-﻿using EventosPeruIA.Api.Models;
+using EventosPeruIA.Api.Models;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
 
@@ -77,17 +77,41 @@ namespace EventosPeruIA.Api.Services
 
         public async Task<List<int>> SearchEventIdsAsync(
             float[] queryEmbedding,
-            int limit = 5)
+            int limit = 5,
+            IReadOnlyCollection<int>? eligibleEventIds = null)
         {
+            if (eligibleEventIds?.Count == 0) return [];
+            if (!(await _client.ListCollectionsAsync()).Contains(_collection)) return [];
             var results = await _client.SearchAsync(
                 collectionName: _collection,
                 vector: queryEmbedding,
+                filter: eligibleEventIds == null ? null : new Filter
+                {
+                    Must = { new Condition { HasId = new HasIdCondition
+                        { HasId = { eligibleEventIds.Select(id => new PointId { Num = (ulong)id }) } } } }
+                },
                 limit: (ulong)limit
             );
 
             return results
                 .Select(r => (int)r.Id.Num)
                 .ToList();
+        }
+
+        public async Task RemoveObsoleteEventsAsync(IReadOnlyCollection<int> activeIds)
+        {
+            if (!(await _client.ListCollectionsAsync()).Contains(_collection)) return;
+            var keep = activeIds.Select(id => (ulong)id).ToHashSet();
+            PointId? offset = null;
+            do
+            {
+                var page = await _client.ScrollAsync(_collection, limit: 256, offset: offset,
+                    payloadSelector: false, vectorsSelector: false);
+                var stale = page.Result.Where(p => p.Id.PointIdOptionsCase != PointId.PointIdOptionsOneofCase.Num
+                    || !keep.Contains(p.Id.Num)).Select(p => p.Id).ToArray();
+                if (stale.Length > 0) await _client.DeleteAsync(_collection, stale, wait: true);
+                offset = page.NextPageOffset;
+            } while (offset != null);
         }
 
         public async Task DeleteEventAsync(int eventoId)

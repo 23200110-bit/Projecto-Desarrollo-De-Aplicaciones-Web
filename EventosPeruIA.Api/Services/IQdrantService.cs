@@ -1,4 +1,4 @@
-﻿using EventosPeruIA.Api.Models;
+using EventosPeruIA.Api.Models;
 
 namespace EventosPeruIA.Api.Services
 {
@@ -10,9 +10,11 @@ namespace EventosPeruIA.Api.Services
 
         Task<List<int>> SearchEventIdsAsync(
             float[] queryEmbedding,
-            int limit = 5
+            int limit = 5,
+            IReadOnlyCollection<int>? eligibleEventIds = null
         );
 
         Task DeleteEventAsync(int eventoId);
+        Task RemoveObsoleteEventsAsync(IReadOnlyCollection<int> activeIds);
     }
 }

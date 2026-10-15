@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -75,7 +75,8 @@ namespace EventosPeruIA.Api.Controllers
 
             // US-006: Cálculo de disponibilidad (Aforo y las Entradas vendidas)
             int ticketsVendidos = await _context.Tickets
-                .CountAsync(t => t.EventoId == id && t.Estado != EstadoTicket.Anulada);
+                .Where(t => t.EventoId == id && t.Estado != EstadoTicket.Anulada)
+                .SumAsync(t => (int?)t.Cantidad) ?? 0;
             int cuposDisponibles = Math.Max(0, evento.Aforo - ticketsVendidos);
 
 
